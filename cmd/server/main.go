@@ -1,6 +1,8 @@
 package main
 
 import (
+	"auth-validation/pkg/validate"
+
 	"auth-users-service/pkg/db"
 	"auth-users-service/pkg/http/rest"
 	"auth-users-service/pkg/middleware"
@@ -16,12 +18,19 @@ import (
 func main() {
 	port := os.Getenv("PORT")
 	dbConnectionURL := os.Getenv("DATABASE_URL")
+	tokenConnectionURL := os.Getenv("REDIS_URL")
+	tokenSecret := os.Getenv("TOKEN_SECRET")
 
 	if port == "" {
 		panic("No PORT specified for app")
 	}
 
 	err := datastore.InitializeDB(dbConnectionURL)
+	if err != nil {
+		panic(err)
+	}
+
+	err = validate.Initialize(tokenConnectionURL, tokenSecret)
 	if err != nil {
 		panic(err)
 	}
@@ -37,11 +46,14 @@ func main() {
 
 	api := router.PathPrefix("/api").Subrouter()
 
+	protected := api.PathPrefix("").Subrouter()
+	protected.Use(validate.AuthenticateRoute)
+
 	// create user (NOT AUTHENTICATED)
 	api.HandleFunc("/users", rest.CreateUserHandler).Methods("POST")
 
-	// router.Use(middleware.AuthenticateJWT)
-	api.HandleFunc("/users/{uuid}", rest.GetUserHandler).Methods("GET")
+	// get user info AUTHENTICATED
+	protected.HandleFunc("/users/{uuid}", rest.GetUserHandler).Methods("GET")
 
 	srv := &http.Server{
 		Handler:      router,
